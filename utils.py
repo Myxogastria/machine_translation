@@ -13,8 +13,8 @@ def load_dataset(dataname):
     with open(filename) as f:
         for line in f:
             en_text, trans_text = line.strip().split('\t')[:2]
-            en_texts.append(en_text)
-            trans_texts.append(trans_text)
+            en_texts.append(en_text.lower())
+            trans_texts.append(trans_text.lower())
     return en_texts, trans_texts
 
 

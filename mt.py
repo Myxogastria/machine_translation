@@ -47,7 +47,8 @@ class LanguageModel:
                     self.unigram.append((id_after, self.word2id['<\s>']))
 
         self.model = Sequential([
-            Dense(self.max_word, input_shape=(self.max_word, ), activation='softmax', use_bias=False)
+            Dense(self.max_word, input_shape=(self.max_word, ),activation='softmax', use_bias=False, 
+            kernel_initializer=keras.initializers.RandomNormal(seed=20200722))
         ])
 
         self.model.compile(loss='categorical_crossentropy')
@@ -70,7 +71,7 @@ class LanguageModel:
         output = self.model.predict(input_vector)[0]
 
         count = top
-        for i in output.argsort():
+        for i in output.argsort()[::-1]:
             print('{}: {}'.format(self.id2word[i], output[i]))
             count -= 1
             if count <= 0:
@@ -86,7 +87,7 @@ plt.grid()
 
 plt.show(block=False)
 
-model_en.predict_next_word('<u>')
+model_en.predict_next_word('can')
 
 
 model_de = LanguageModel(max_word_de)
@@ -98,6 +99,6 @@ plt.grid()
 
 plt.show(block=False)
 
-model_de.predict_next_word(',')
+model_de.predict_next_word('haben')
 
 
