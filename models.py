@@ -1,5 +1,5 @@
 import tensorflow.keras as keras
-from tensorflow.keras.layers import Input, Dense, Reshape
+from tensorflow.keras.layers import Input, Dense, Reshape, Activation, Lambda, Dot, Multiply
 from tensorflow.keras.models import Model, Sequential
 
 import re
@@ -160,6 +160,45 @@ class TranslationModel:
             print('')
             for word in split(ref):
                 print('{}: {}'.format(word, count_vector[self.model_from.get_id(word)]))
+    
+    def translate(self, text_from, epochs=100):
+        first_vector = np.zeros((self.model_to.max_vocabulary, 1))
+        first_vector[self.model_to.get_id('<s>'), 0] = 1
+
+        dummy_input = Input(shape=(self.model_to.max_vocabulary, self.model_to.max_vocabulary))
+        weight = Dense(self.max_word, input_dim=self.model_to.max_vocabulary, 
+                use_bias=False, kernel_constraint=keras.constraints.MaxNorm(max_value=10000), 
+                activation=lambda x: keras.activations.softmax(x, axis=1))(dummy_input)
+        weight_res = Reshape((self.model_to.max_vocabulary*self.max_word, ))(weight)
+        matmul = Dense(self.model_from.max_vocabulary, use_bias=False, 
+            kernel_initializer=lambda shape, dtype=None: self.model.weights[0], 
+            bias_initializer=lambda shape, dtype=None: self.model.weights[1], 
+            name='translation')(weight_res)
+
+        weight_0 = Lambda(lambda x: x[:, :, :-1], output_shape=(self.model_to.max_vocabulary, self.max_word-1))(weight)
+        start_word = keras.backend.constant(first_vector, shape=(1, self.model_to.max_vocabulary, 1))
+        weight_x = keras.layers.concatenate([start_word, weight_0], axis=2)
+        weight_language = keras.backend.constant(np.array([self.model_to.model.weights[0].numpy()]))
+        weight_y = Dot(1)([weight_language, weight_x])
+        weight_y_max = Activation(lambda x: keras.activations.softmax(x, axis=1))(weight_y)
+        weight_z = Multiply()([weight, weight_y_max])
+        z_sum = keras.backend.sum(weight_z, axis=1)
+        z_final = Lambda(lambda x: keras.backend.log(x), name='language')(z_sum)
+
+        self.model_translation = Model(inputs=dummy_input, outputs=[matmul, z_final])
+        self.model_translation.get_layer('translation').trainable = False
+
+        dummy_data = np.array([np.eye(self.model_to.max_vocabulary)])
+
+        self.model_translation.compile(loss={'translation':'mean_absolute_error', 'language':'mean_absolute_error'}, 
+            loss_weights={'translation':self.max_word**2, 'language':1}, optimizer='adam')
+        
+        answer_vec = self.make_word_count_vector(text_from)
+        self.history_translation = self.model_translation.fit(x=dummy_data, y={'translation':answer_vec.T, 'language':np.zeros((1, self.max_word))}, epochs=epochs)
+
+        self.model_translation_x = Model(inputs=dummy_input, outputs=weight)
+        return [self.model_to.id2word[i] for i in self.model_translation_x.predict(dummy_data)[0].argmax(0)]
+
 
 
 
