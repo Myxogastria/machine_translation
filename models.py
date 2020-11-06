@@ -219,7 +219,7 @@ class TranslationModel:
         dummy_data = np.array([np.eye(self.model_to.max_vocabulary)])
 
         self.model_translation.compile(optimizer='adam', loss={'translation':'mean_absolute_error', 'language':'mean_absolute_error'}, 
-            loss_weights={'translation':self.max_word**2, 'language':1}, optimizer='adam')
+            loss_weights={'translation':self.max_word**2, 'language':1})
         
         answer_vec = self.make_word_count_vector(text_from)
         self.history_translation = self.model_translation.fit(x=dummy_data, y={'translation':answer_vec.T, 'language':np.zeros((1, self.max_word))}, epochs=epochs)
