@@ -24,7 +24,7 @@ class LanguageModel:
 
         for text in texts:
             id_before = self.word2id['<s>']
-            id_after = self.word2id['<\s>']
+            id_after = self.word2id['<\s>ggVG']
             for word in split(text):
                 if word not in self.word2id:
                     if len(self.word2id) >= self.max_vocabulary:
@@ -48,7 +48,7 @@ class LanguageModel:
             kernel_initializer=keras.initializers.RandomNormal(seed=20200722))
         ])
 
-        self.model.compile(loss='categorical_crossentropy')
+        self.model.compile(optimizer='adam', loss='categorical_crossentropy')
         self.model.summary()
 
         train = np.array(self.unigram)
@@ -114,7 +114,7 @@ class TranslationModel:
                 use_bias=True, activation='softmax')
         ])
 
-        self.model.compile(loss='categorical_crossentropy')
+        self.model.compile(optimizer='adam', loss='categorical_crossentropy')
         self.model.summary()
         self.history = self.model.fit(train_input, train_output, 
             batch_size=100, epochs=epochs)
@@ -218,7 +218,7 @@ class TranslationModel:
 
         dummy_data = np.array([np.eye(self.model_to.max_vocabulary)])
 
-        self.model_translation.compile(loss={'translation':'mean_absolute_error', 'language':'mean_absolute_error'}, 
+        self.model_translation.compile(optimizer='adam', loss={'translation':'mean_absolute_error', 'language':'mean_absolute_error'}, 
             loss_weights={'translation':self.max_word**2, 'language':1}, optimizer='adam')
         
         answer_vec = self.make_word_count_vector(text_from)
