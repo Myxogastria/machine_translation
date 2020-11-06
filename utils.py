@@ -2,7 +2,7 @@ from collections import defaultdict
 from nltk.translate.bleu_score import corpus_bleu
 
 
-def load_dataset(dataname):
+def load_dataset(dataname, encoding=encoding):
     # wget http://www.manythings.org/anki/jpn-eng.zip
     if dataname == 'jpn-eng':
         filename = '../jpn-eng/jpn.txt'
@@ -10,7 +10,7 @@ def load_dataset(dataname):
         filename = '../deu-eng/deu.txt'
     en_texts = []
     trans_texts = []
-    with open(filename) as f:
+    with open(filename, encoding=encoding) as f:
         for line in f:
             en_text, trans_text = line.strip().split('\t')[:2]
             en_texts.append(en_text.lower())

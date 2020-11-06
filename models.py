@@ -161,6 +161,34 @@ class TranslationModel:
             for word in split(ref):
                 print('{}: {}'.format(word, count_vector[self.model_from.get_id(word)]))
     
+    def predict_next_id(self, word, top=10):
+        if word in self.model_to.word2id:
+            id = self.model_to.word2id[word]
+        else:
+            id = self.model_to.word2id['<u>']
+        input_vector = np.zeros((1, self.model_to.max_vocabulary))
+        input_vector[0, id] = 1
+        output = self.model_to.model.predict(input_vector)[0]
+
+        return np.array(output.argsort()[:(-top-1):-1])
+
+    def predict_translation_loss(self, text_to, ref):
+        count_vector = self.model.predict(
+            np.array([self.make_text_matrix(text_to)])
+        ).reshape((self.model_from.max_vocabulary, 1))
+        return np.abs(count_vector - self.make_word_count_vector(ref)).sum()
+
+    def get_text_to_from_id(self, id_list):
+        text_to = ''
+        for id in id_list:
+            word = self.model_to.id2word[id]
+            if word not in ['<s>', '<\s>', '<u>']:
+                text_to += self.model_to.id2word[id] + ' '
+            elif word == '<u>':
+                text_to += 'unkwn'
+        return text_to[:-1]
+
+    
     def translate(self, text_from, epochs=100):
         first_vector = np.zeros((self.model_to.max_vocabulary, 1))
         first_vector[self.model_to.get_id('<s>'), 0] = 1

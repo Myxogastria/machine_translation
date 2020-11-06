@@ -3,9 +3,11 @@ import collections
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import time
 
 from models import split, LanguageModel, TranslationModel
 from utils import load_dataset
+
 
 # n_text = 1000
 # max_vocabulary_en = 400
@@ -47,7 +49,7 @@ len(word_count_en)
 word_count_en.most_common()[:100]
 word_count_en['<u>']
 
-model_en.predict_next_word('<\s>')
+model_en.predict_next_word('.')
 
 
 model_de = LanguageModel(max_vocabulary_de)
@@ -85,169 +87,100 @@ plt.grid()
 
 plt.show(block=False)
 
-i = 3000
+i = 4000
+target_text = texts_de[i]
+target_text = 'ich aß einen apfel.'
+target_text = 'du aßest einen apfel.'
+target_text
 texts_en[i]
 de_en.predict_word_count(texts_en[i], length=20, ref=texts_de[i])
 de_en.predict_word_count('i have an apple.', length=20, ref='ich habe einen apfel.')
 
-i = 3000
-translated = de_en.translate(texts_de[i], epochs=1000)
-texts_de[i]
-texts_en[i]
-translated
+n_candidate = 100
 
-pd.DataFrame({'loss': de_en.history_translation.history['loss']}).plot()
-plt.yscale('log')
-plt.grid()
+def predict_next_id(word, top=10):
+    if word in de_en.model_to.word2id:
+        id = de_en.model_to.word2id[word]
+    else:
+        id = de_en.model_to.word2id['<u>']
+    input_vector = np.zeros((1, de_en.model_to.max_vocabulary))
+    input_vector[0, id] = 1
+    output = de_en.model_to.model.predict(input_vector)[0]
 
-plt.show(block=False)
+    return np.array(output.argsort()[:(-top-1):-1])
 
-# first_vector = np.zeros((de_en.model_to.max_vocabulary, 1))
-# first_vector[de_en.model_to.get_id('<s>'), 0] = 1
+[de_en.model_to.id2word[i] for i in predict_next_id('<s>', n_candidate)]
 
-# dummy_input = Input(shape=(de_en.model_to.max_vocabulary, de_en.model_to.max_vocabulary))
-# weight = Dense(de_en.max_word, input_dim=de_en.model_to.max_vocabulary, 
-#         use_bias=False, kernel_constraint=keras.constraints.MaxNorm(max_value=10000), 
-#         activation=lambda x: keras.activations.softmax(x, axis=1))(dummy_input)
-# weight_res = Reshape((de_en.model_to.max_vocabulary*de_en.max_word, ))(weight)
-# matmul = Dense(de_en.model_from.max_vocabulary, use_bias=False, 
-#     kernel_initializer=lambda shape, dtype=None: de_en.model.weights[0], 
-#     bias_initializer=lambda shape, dtype=None: de_en.model.weights[1], 
-#     name='translation')(weight_res)
+de_en.model_to.predict_next_word('<s>', top=n_candidate)
 
-# weight_0 = Lambda(lambda x: x[:, :, :-1], output_shape=(de_en.model_to.max_vocabulary, de_en.max_word-1))(weight)
-# start_word = keras.backend.constant(first_vector, shape=(1, de_en.model_to.max_vocabulary, 1))
-# weight_x = keras.layers.concatenate([start_word, weight_0], axis=2)
-# weight_language = keras.backend.constant(np.array([de_en.model_to.model.weights[0].numpy()]))
-# weight_y = Dot(1)([weight_language, weight_x])
-# weight_y_max = Activation(lambda x: keras.activations.softmax(x, axis=1))(weight_y)
-# weight_z = Multiply()([weight, weight_y_max])
-# z_sum = keras.backend.sum(weight_z, axis=1)
-# z_final = Lambda(lambda x: keras.backend.log(x), name='language')(z_sum)
+def predict_translation_loss(text_to, ref):
+    count_vector = de_en.model.predict(
+        np.array([de_en.make_text_matrix(text_to)])
+    ).reshape((de_en.model_from.max_vocabulary, 1))
+    return np.abs(count_vector - de_en.make_word_count_vector(ref)).sum()
 
-# de_en.model_translation = Model(inputs=dummy_input, outputs=[matmul, z_final])
-# de_en.model_translation.get_layer('translation').trainable = False
+def get_text_to_from_id(id_list):
+    text_to = ''
+    for id in id_list:
+        word = de_en.model_to.id2word[id]
+        if word not in ['<s>', '<\s>', '<u>']:
+            text_to += de_en.model_to.id2word[id] + ' '
+        elif word == '<u>':
+            text_to += 'unkwn'
+    return text_to[:-1]
 
-# dummy_data = np.array([np.eye(de_en.model_to.max_vocabulary)])
+predict_translation_loss(texts_en[i], texts_de[i])
 
-# de_en.model_translation.compile(loss={'translation':'mean_absolute_error', 'language':'mean_absolute_error'}, 
-#     loss_weights={'translation':de_en.max_word**2, 'language':1}, optimizer='adam')
+candidate = np.full((n_candidate**2, de_en.max_word), de_en.model_to.get_id('<\s>'))
+candidate_loss = np.zeros((n_candidate**2, ))
 
-# answer_vec = de_en.make_word_count_vector(texts_de[i])
-# de_en.history_translation = de_en.model_translation.fit(x=dummy_data, y={'translation':answer_vec.T, 'language':np.zeros((1, de_en.max_word))}, epochs=epochs)
+test_output = np.array([de_en.make_word_count_vector(target_text)]).reshape((-1, de_en.model_from.max_vocabulary))
 
-# de_en.model_translation_x = Model(inputs=dummy_input, outputs=weight)
+time0 = time.time()
 
+k = 0
+for i in predict_next_id('<s>', n_candidate):
+    for j in predict_next_id(de_en.model_to.id2word[i], n_candidate):
+        candidate[k][0] = i
+        candidate[k][1] = j
+        candidate_loss[k] = de_en.model.test_on_batch(
+            np.array([de_en.make_text_matrix(get_text_to_from_id(candidate[k]))]), 
+            test_output)
 
+        # test_input.append(de_en.make_text_matrix(get_text_to_from_id(candidate[k])))
+        # candidate_loss[k] = predict_translation_loss(get_text_to_from_id(candidate[k]), texts_de[i])
+        k += 1
 
+print(time.time() - time0)
+print('end of {}/{}'.format(1, de_en.max_word))
 
+for i_word in range(1, de_en.max_word):
+    candidate0 = candidate
+    candidate_loss0 = candidate_loss
 
+    converged = True
+    prev_vec = candidate0[candidate_loss0.argsort()[0]]
+    for i in candidate_loss0.argsort()[:10]:
+        converged = converged and np.all(prev_vec == candidate0[i])
+        prev_vec = candidate0[i]
+        print(get_text_to_from_id(candidate0[i]))
+    
+    if converged:
+        print(time.time() - time0)
+        print('end of {}/{}'.format(i_word+1, de_en.max_word))
+        break
 
+    k = 0
+    for i in candidate_loss0.argsort()[:n_candidate]:
+        for j in predict_next_id(de_en.model_to.id2word[candidate0[i][1]], n_candidate):
+            candidate[k] = candidate0[i]
+            candidate[k][2] = j
+            candidate_loss[k] = de_en.model.test_on_batch(
+                np.array([de_en.make_text_matrix(get_text_to_from_id(candidate[k]))]), 
+                test_output)
+            k += 1
 
+    print(time.time() - time0)
+    print('end of {}/{}'.format(i_word+1, de_en.max_word))
 
-
-
-
-# model_from = lambda x: 0
-# model_from.max_vocabulary = 7
-# model_to = lambda x: 1
-# model_to.max_vocabulary = 8
-# test = lambda x: 2
-# test.max_word = 8
-# test.model_from = model_from
-# test.model_to = model_to
-
-# # translation_weight = np.arange(test.model_from.max_vocabulary*test.model_to.max_vocabulary*test.max_word).reshape((test.model_to.max_vocabulary*test.max_word, test.model_from.max_vocabulary))
-# # language_weight = np.arange(test.model_to.max_vocabulary**2).reshape((1, test.model_to.max_vocabulary, test.model_to.max_vocabulary))
-# translation_weight = np.array([
-#     [1, 0, 0, 0, 0, 0, 0], 
-#     [0, 1, 0, 0, 0, 0, 0], 
-#     [0, 0, 0.5, 0, 0, 0, 0], 
-#     [0, 0, 0.5, 0, 0, 0, 0], 
-#     [0, 0, 0, 0, 1, 0, 0], 
-#     [0, 0, 0, 1, 0, 0, 0], 
-#     [0, 0, 0, 0, 0, 1, 1], 
-#     [0, 0, 0, 0, 0, 0, 1], 
-# ]*test.max_word)/test.max_word
-# answer_mat = np.array([
-#     [0, 0, 0, 0, 0, 0, 0, 0], 
-#     [1, 0, 0, 0, 0, 0, 0, 0], 
-#     [0, 1, 0, 0, 0, 0, 0, 0], 
-#     [0, 0, 1, 0, 0, 0, 0, 0], 
-#     [0, 0, 0, 1, 0, 0, 0, 0], 
-#     [0, 0, 0, 0, 1, 0, 0, 0], 
-#     [0, 0, 0, 0, 0, 1, 0, 0], 
-#     [0, 0, 0, 0, 0, 0, 1, 1], 
-# ])
-# np.dot(answer_mat.reshape((1, 64)), translation_weight)*test.max_word
-# language_weight = np.array([[
-#     # [0, 0, 0, 0, 0, 0, 0, 0], 
-#     # [1, 0, 0, 0, 0, 0, 0, 0], 
-#     # [0, 1, 0, 0, 0, 0, 0, 0], 
-#     # [0, 0, 1, 0, 0, 0, 0, 0], 
-#     # [0, 0, 0, 1, 0, 0, 0, 0], 
-#     # [0, 0, 0, 0, 1, 0, 0, 0], 
-#     # [0, 0, 0, 0, 0, 1, 0, 0], 
-#     # [0, 0, 0, 0, 0, 0, 1, 1], 
-#     [0, 1, 0, 0, 0, 0, 0, 0], 
-#     [0, 0, 1, 0, 0, 0, 0, 0], 
-#     [0, 0, 0, 1, 0, 0, 0, 0], 
-#     [0, 0, 0, 0, 1, 0, 0, 0], 
-#     [0, 0, 0, 0, 0, 1, 0, 0], 
-#     [0, 0, 0, 0, 0, 0, 1, 0], 
-#     [0, 0, 0, 0, 0, 0, 0, 1], 
-#     [0, 0, 0, 0, 0, 0, 0, 1], 
-# ]])
-# answer_vec = np.dot(translation_weight.T, answer_mat.reshape((64, 1)))
-
-# first_vector = np.zeros((test.model_to.max_vocabulary, 1))
-# first_vector[0, 0] = 1
-
-# dummy_input = Input(shape=(test.model_to.max_vocabulary, test.model_to.max_vocabulary))
-# weight = Dense(test.max_word, input_dim=test.model_to.max_vocabulary, 
-#         # kernel_initializer=lambda shape, dtype=None: answer_mat*1000, 
-#         use_bias=False, kernel_constraint=keras.constraints.MaxNorm(max_value=10000), 
-#         activation=lambda x: keras.activations.softmax(x, axis=1))(dummy_input)
-# weight_res = Reshape((test.model_to.max_vocabulary*test.max_word, ))(weight)
-# matmul = Dense(test.model_from.max_vocabulary, use_bias=False, 
-#     kernel_initializer=lambda shape, dtype=None: translation_weight, 
-#     name='matmul')(weight_res)
-
-# weight_0 = Lambda(lambda x: x[:, :, :-1], output_shape=(test.model_to.max_vocabulary, test.max_word-1))(weight)
-# start_word = keras.backend.constant(first_vector, shape=(1, test.model_to.max_vocabulary, 1))
-# weight_x = keras.layers.concatenate([start_word, weight_0], axis=2)
-# weight_language = keras.backend.constant(language_weight*1000)
-# weight_y = Dot(1)([weight_language, weight_x])
-# weight_y_max = Activation(lambda x: keras.activations.softmax(x, axis=1))(weight_y)
-# weight_z = Multiply()([weight, weight_y_max])
-# z_sum = keras.backend.sum(weight_z, axis=1)
-# z_final = Lambda(lambda x: keras.backend.log(x), name='lang')(z_sum)
-# # z_sum_log = keras.backend.log(z_sum)
-# # z_sum_log_sum = keras.backend.sum(z_sum_log, axis=1)
-# # z_final = Lambda(lambda x: keras.backend.exp(x), name='lang')(z_sum_log_sum)
-
-# model = Model(inputs=dummy_input, outputs=[matmul, z_final])
-# model.get_layer('matmul').trainable = False
-
-# dummy_data = np.array([np.eye(test.model_to.max_vocabulary)])
-# weight_output = model.predict(dummy_data)
-# weight_output
-
-# # model.compile(loss={'matmul':'categorical_crossentropy', 'lang':'mean_absolute_error'}, 
-# model.compile(loss={'matmul':'mean_absolute_error', 'lang':'mean_absolute_error'}, 
-#     loss_weights={'matmul':test.max_word**2, 'lang':1}, optimizer='adam')
-# # history = model.fit(x=dummy_data, y={'matmul':answer_vec.T, 'lang':np.zeros((1, 1))}, epochs=1)
-# history = model.fit(x=dummy_data, y={'matmul':answer_vec.T, 'lang':np.zeros((1, test.max_word))}, epochs=10000)
-
-# pd.DataFrame({'loss': history.history['loss']}).plot()
-# plt.yscale('log')
-# plt.grid()
-
-# plt.show(block=False)
-
-# model_x = Model(inputs=dummy_input, outputs=weight)
-# a = model_x.predict(dummy_data)[0]
-# model_x.predict(dummy_data)[0].argmax(0)
-
-
-
+print('end')
